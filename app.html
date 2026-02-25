@@ -9,6 +9,63 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
+    /* Contenedor de filtros */
+    .filtros {
+      display: flex;
+      gap: 20px;
+      z-index: 2000;
+      position: absolute;
+      bottom: 0;
+      background-color: white;
+      width: 100%;
+      padding: 1%;
+      align-items: flex-end;
+    }
+
+    /* Cada grupo de filtros */
+    .filtro-grupo {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      flex: 1;
+      background: #f9f9f9;
+
+      /* Limitar altura y hacer scroll si hay muchas opciones */
+      max-height: 50px;
+      /* altura máxima */
+      overflow-y: auto;
+    }
+
+    .filtro-grupo h4 {
+      margin-top: 0;
+      margin-bottom: 5px;
+      font-size: 16px;
+    }
+
+    .filtro-opcion {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .filtro-opcion input {
+      margin-right: 5px;
+    }
+
+    button {
+      border: none;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      max-height: 30px;
+      position: relative;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
     body,
     html {
       margin: 0;
@@ -118,6 +175,27 @@
 <body>
 
   <div id="map"></div>
+  <div class="filtros">
+    <div>
+      <h4 style="margin-bottom: 5%;">Provincia</h4>
+      <div class="filtro-grupo" id="grupoProvincia"></div>
+    </div>
+
+    <div>
+      <h4 style="margin-bottom: 5%;">Municipio</h4>
+      <div class="filtro-grupo" id="grupoMunicipio"></div>
+    </div>
+
+    <div>
+      <h4 style="margin-bottom: 5%;">Tipología</h4>
+      <div class="filtro-grupo" id="grupoTipologia"></div>
+    </div>
+
+    <button id="btnFiltrar">Filtrar</button>
+    <button id="btnReset">Reiniciar filtros</button>
+  </div>
+
+
 
   <!-- MODAL -->
   <div id="modal" class="modal">
@@ -242,6 +320,8 @@
       </div>`
       });
     }
+    let estacionesGlobal = [];
+    let markers = [];
 
     // ===============================
     // CARGA INICIAL DEL MAPA
@@ -249,21 +329,89 @@
     fetch('https://meteorologia-production-4380.up.railway.app/estaciones')
       .then(r => r.json())
       .then(estaciones => {
-        estaciones.forEach(e => {
-          const color = iconConfig[e.tipologia] ?? iconConfig["Otros"];
-
-          L.marker([e.latitud, e.longitud], {
-            icon: createIcon(color, e.puntoControl)
-          })
-            .addTo(map)
-            .bindTooltip(`
-          <strong>${e.nombre}</strong><br>
-          <strong>Media:</strong> ${e.media.toFixed(1)} mm<br>
-            <strong>Periodo:</strong> ${e.periodo}
-        `)
-            .on('click', () => abrirModal(e, color));
-        });
+        estacionesGlobal = estaciones;
+        poblarFiltros(estaciones);
+        mostrarMarkers(estaciones);
       });
+
+    // Función para crear markers
+    function mostrarMarkers(estaciones) {
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      estaciones.forEach(e => {
+        const color = iconConfig[e.tipologia] ?? iconConfig["Otros"];
+        const marker = L.marker([e.latitud, e.longitud], {
+          icon: createIcon(color, e.puntoControl)
+        })
+          .addTo(map)
+          .bindTooltip(`
+        <strong>${e.nombre}</strong><br>
+        <strong>Media:</strong> ${e.media.toFixed(1)} mm<br>
+        <strong>Periodo:</strong> ${e.periodo}
+      `)
+          .on('click', () => abrirModal(e, color));
+
+        markers.push(marker);
+      });
+    }
+
+    // ===============================
+    // FILTROS
+    // ===============================
+    function poblarFiltros(estaciones) {
+      const provincias = [...new Set(estaciones.map(e => e.provincia))].sort();
+      const municipios = [...new Set(estaciones.map(e => e.municipio))].sort();
+      const tipologias = [...new Set(estaciones.map(e => e.tipologia))].sort();
+
+      const grupos = {
+        'grupoProvincia': provincias,
+        'grupoMunicipio': municipios,
+        'grupoTipologia': tipologias
+      };
+
+      for (const [id, opciones] of Object.entries(grupos)) {
+        const cont = document.getElementById(id);
+        opciones.forEach(op => {
+          const div = document.createElement('div');
+          div.className = 'filtro-opcion';
+          div.innerHTML = `<input type="checkbox" value="${op}"> ${op}`;
+          cont.appendChild(div);
+        });
+      }
+    }
+
+    // Función para leer checkboxes seleccionados
+    function obtenerSeleccionCheckbox(grupoId) {
+      const cont = document.getElementById(grupoId);
+      return Array.from(cont.querySelectorAll('input[type="checkbox"]:checked')).map(i => i.value);
+    }
+
+    // Función para filtrar
+    function aplicarFiltros() {
+      const provincias = obtenerSeleccionCheckbox('grupoProvincia');
+      const municipios = obtenerSeleccionCheckbox('grupoMunicipio');
+      const tipologias = obtenerSeleccionCheckbox('grupoTipologia');
+
+      const filtradas = estacionesGlobal.filter(e => {
+        const matchProvincia = provincias.length === 0 || provincias.includes(e.provincia);
+        const matchMunicipio = municipios.length === 0 || municipios.includes(e.municipio);
+        const matchTipologia = tipologias.length === 0 || tipologias.includes(e.tipologia);
+        return matchProvincia && matchMunicipio && matchTipologia;
+      });
+
+      mostrarMarkers(filtradas);
+    }
+
+    // Botones
+    document.getElementById('btnFiltrar').addEventListener('click', aplicarFiltros);
+    document.getElementById('btnReset').addEventListener('click', () => {
+      ['grupoProvincia', 'grupoMunicipio', 'grupoTipologia'].forEach(id => {
+        document.querySelectorAll(`#${id} input[type="checkbox"]`).forEach(c => c.checked = false);
+      });
+      mostrarMarkers(estacionesGlobal);
+    });
+
 
     // ===============================
     // MODAL
