@@ -48,14 +48,13 @@
       /* Ajusta el espacio entre líneas */
       letter-spacing: 1px;
       flex-grow: 1;
-      margin-tp: -10px
     }
 
 
 
     /* Contenedor de filtros */
     .filtros {
-      display: flex;
+      display: none;
       gap: 20px;
       z-index: 2000;
       position: absolute;
@@ -234,7 +233,7 @@
 
   </div>
   <div id="map"></div>
-  <div class="filtros">
+  <div class="filtros" id="filtrosId">
     <div>
       <h4 style="margin-bottom: 5%;">Provincia</h4>
       <div class="filtro-grupo" id="grupoProvincia"></div>
@@ -390,6 +389,8 @@
         estacionesGlobal = estaciones;
         poblarFiltros(estaciones);
         mostrarMarkers(estaciones);
+        document.getElementById('filtrosId').style.display = 'flex';
+
       });
 
     // Función para crear markers
