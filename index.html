@@ -9,6 +9,34 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
+    .filtrosIcon {
+      float: left;
+      position: absolute;
+      display: block;
+      z-index: 2000;
+      bottom: 2%;
+      left: 2%;
+      width: 3%;
+      cursor: pointer;
+      border-radius: 5px;
+      background-color: white;
+      padding: 5px;
+      display: block;
+    }
+
+    #minimize-btn {
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+      top: 5%;
+      right: 1%;
+      position: absolute;
+    }
+
+    #minimize-btn:hover {
+      opacity: 0.7;
+    }
+
     body,
     html {
       margin: 0;
@@ -54,6 +82,7 @@
 
     /* Contenedor de filtros */
     .filtros {
+      position: sticky;
       display: none;
       gap: 20px;
       z-index: 2000;
@@ -98,14 +127,11 @@
       margin-right: 5px;
     }
 
-    button {
-      border: none;
-      border-radius: 5px;
+    #btnReset {
+      border-radius: 25px;
       background-color: #007bff;
       color: white;
       cursor: pointer;
-      max-height: 30px;
-      position: relative;
     }
 
     button:hover {
@@ -233,6 +259,7 @@
 
   </div>
   <div id="map"></div>
+  <img class="filtrosIcon" src="img/filtros.png" id="filter-btn" title="Mostrar filtros" />
   <div class="filtros" id="filtrosId">
     <div>
       <h4 style="margin-bottom: 5px;margin-left: 3px;">Provincia</h4>
@@ -250,6 +277,7 @@
     </div>
 
     <button id="btnReset">Reiniciar filtros</button>
+    <button id="minimize-btn" title="Minimizar">-</button>
   </div>
 
 
@@ -319,6 +347,18 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
+    document.getElementById('filter-btn').style.display = 'none';
+
+    document.getElementById("minimize-btn").addEventListener("click", () => {
+      document.getElementById('filtrosId').style.display = 'none';
+      document.getElementById('filter-btn').style.display = 'block';
+    });
+
+    document.getElementById("filter-btn").addEventListener("click", () => {
+      document.getElementById('filtrosId').style.display = 'flex';
+      document.getElementById('filter-btn').style.display = 'none';
+    });
+
     // ===============================
     // MAPAS BASE
     // ===============================
