@@ -15,11 +15,13 @@
       gap: 20px;
       z-index: 2000;
       position: absolute;
-      bottom: 0;
+      bottom: 1%;
       background-color: white;
-      width: 100%;
       padding: 1%;
       align-items: flex-end;
+      justify-self: center;
+      border: solid 1px;
+      border-radius: 5px;
     }
 
     /* Cada grupo de filtros */
@@ -31,7 +33,7 @@
       background: #f9f9f9;
 
       /* Limitar altura y hacer scroll si hay muchas opciones */
-      max-height: 50px;
+      max-height: 60px;
       /* altura máxima */
       overflow-y: auto;
     }
@@ -191,7 +193,6 @@
       <div class="filtro-grupo" id="grupoTipologia"></div>
     </div>
 
-    <button id="btnFiltrar">Filtrar</button>
     <button id="btnReset">Reiniciar filtros</button>
   </div>
 
@@ -377,6 +378,9 @@
           div.className = 'filtro-opcion';
           div.innerHTML = `<input type="checkbox" value="${op}"> ${op}`;
           cont.appendChild(div);
+
+          // Evento para aplicar filtros automáticamente al cambiar un checkbox
+          div.querySelector('input').addEventListener('change', aplicarFiltros);
         });
       }
     }
@@ -403,8 +407,7 @@
       mostrarMarkers(filtradas);
     }
 
-    // Botones
-    document.getElementById('btnFiltrar').addEventListener('click', aplicarFiltros);
+    // Botón de reinicio
     document.getElementById('btnReset').addEventListener('click', () => {
       ['grupoProvincia', 'grupoMunicipio', 'grupoTipologia'].forEach(id => {
         document.querySelectorAll(`#${id} input[type="checkbox"]`).forEach(c => c.checked = false);
