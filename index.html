@@ -9,6 +9,50 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: arial;
+      overflow: hidden;
+      background: #2c3e50;
+    }
+
+    .tab-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Ajuste de la barra superior para albergar el título */
+    .tab-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #2c3e50;
+      padding: 5 20px;
+      border-bottom: 1px solid #34495e;
+      height: 80px;
+      position: relative;
+    }
+
+    /* ESTILO DEL TÍTULO EN BLANCO Y NEGRITA */
+    .tab-title {
+      color: #FFFFFF;
+      font-size: 20px;
+      text-align: center;
+      text-transform: uppercase;
+      line-height: 1;
+      /* Ajusta el espacio entre líneas */
+      letter-spacing: 1px;
+      flex-grow: 1;
+      margin-tp: -10px
+    }
+
+
+
     /* Contenedor de filtros */
     .filtros {
       display: flex;
@@ -176,7 +220,19 @@
 </head>
 
 <body>
+  <div class="tab-bar">
 
+
+    <div class="tab-title">
+      RED DE ESTACIONES CON PLUVIOMETRÍA DEL SAIH DE C.H. GUADALQUIVIR
+      <br><span style="color: #FFFFFF; font-size: 12px; font-weight: 100; opacity: 0.8; text-transform: none;"> Datos
+        actualizados hasta 15-02-2026 (No Contrastados) </span>
+      <br><span
+        style="bottom: 0 px ;color: #FFFFFF; font-size: 10px; font-weight: 100; opacity: 0.8; text-transform: none;">
+        Autor: Ing. Javier Aparicio </span>
+    </div>
+
+  </div>
   <div id="map"></div>
   <div class="filtros">
     <div>
@@ -291,15 +347,15 @@
     // ICONOS POR TIPO
     // ===============================
     const iconConfig = {
-      "Centrales Hidroeléctricas": "green",
+      "Centrales Hidroeléctricas": "fuchsia",
       "Aforos Río": "orange",
       "Marcos Control": "purple",
       "Aforos Canales": "red",
       "Balsas": "gray",
       "Impulsiones": "brown",
       "Embalses": "blue",
-      "Pluviómetros": "pink",
-      "Otros": "red"
+      "Pluviómetros": "green",
+      "Otros": "black"
     };
 
     function createIcon(color, puntoControl) {
@@ -348,7 +404,8 @@
         })
           .addTo(map)
           .bindTooltip(`
-        <strong>${e.nombre}</strong><br>
+        <strong style="color:${color}">${e.nombre}</strong><br>
+        <strong>Tipología:</strong> ${e.tipologia}<br>
         <strong>Media:</strong> ${e.media.toFixed(1)} mm<br>
         <strong>Periodo:</strong> ${e.periodo}
       `)
