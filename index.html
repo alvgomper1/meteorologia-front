@@ -440,10 +440,8 @@
 
       /* ── Detail panel: sube desde abajo, full width ── */
       #detailPanel {
-        /* Cancela el slide desde la derecha */
         right: 0 !important;
         width: 100%;
-        /* En lugar de usar right, usamos bottom para el slide */
         top: auto;
         bottom: calc(-1 * (85vh));
         height: 85vh;
@@ -452,28 +450,39 @@
         border-radius: 20px 20px 0 0;
         box-shadow: 0 -8px 50px rgba(0,0,0,0.7);
         transition: bottom 0.38s cubic-bezier(0.4,0,0.2,1);
-        /* Drag handle visual */
         overflow: hidden;
-      }
-      #detailPanel::before {
-        content: '';
-        display: block;
-        width: 40px; height: 4px;
-        background: var(--border2);
-        border-radius: 4px;
-        margin: 10px auto 0;
-        flex-shrink: 0;
       }
       #detailPanel.open {
         bottom: 0;
         right: 0 !important;
       }
 
-      /* Header del panel sticky más compacto */
-      #dp-header { padding: 10px 14px; }
-      #dp-nombre { font-size: 15px; }
+      /* Handle visual: va DENTRO del dp-header sticky para que
+         nunca quede por debajo del botón cerrar ni del header del site.
+         Lo hacemos con ::before del dp-header (no del panel) */
+      #detailPanel::before { display: none; }  /* desactivar el ::before del panel */
+      #dp-header::before {
+        content: '';
+        display: block;
+        width: 40px; height: 4px;
+        background: var(--border2);
+        border-radius: 4px;
+        margin: 0 auto 10px;
+      }
 
-      /* KPIs: mantiene 2x2 pero más pequeño */
+      /* dp-header en mobile: padding superior para el handle + contenido */
+      #dp-header {
+        padding: 12px 14px 10px;
+      }
+
+      /* El botón cerrar relativo al dp-header sticky, siempre visible */
+      #dp-close {
+        width: 36px; height: 36px;
+        font-size: 15px;
+        top: 10px; right: 12px;
+      }
+
+      #dp-nombre { font-size: 15px; }
       #dp-kpis { gap: 7px; padding: 10px 14px; }
       .kpi { padding: 9px 11px; border-radius: 10px; }
       .kpi-v { font-size: 16px; }
@@ -496,27 +505,6 @@
       #dp-table > div:first-child { flex-direction: column; align-items: flex-start; gap: 6px; }
       #dp-table > div:first-child > div { width: 100%; display: flex; }
       #dp-table > div:first-child > div .ctab { flex: 1; text-align: center; }
-
-      /* ── Handle visual y botón cerrar ── */
-      /* El ::before del panel hace de handle visual arriba */
-      /* El dp-header sticky necesita top:0 relativo al panel, ok */
-      /* Pero el botón cerrar (absolute top:12px right:14px dentro de dp-header)
-         queda visible siempre — lo que faltaba era que el panel en mobile
-         empieza con el handle de 24px antes del dp-header sticky,
-         así que ajustamos el padding-top del dp-header para que el handle
-         no tape el contenido */
-      #dp-header {
-        padding-top: 8px;  /* el handle ::before ya ocupa 24px encima */
-        padding-left: 14px;
-        padding-right: 14px;
-        padding-bottom: 10px;
-      }
-      /* El botón cerrar en mobile lo hacemos más grande y accesible */
-      #dp-close {
-        width: 34px; height: 34px;
-        font-size: 15px;
-        top: 8px; right: 12px;
-      }
 
       /* ── CRÍTICO: evitar que el mapa vaya lento en touch ──
          Leaflet necesita touch-action libre en el contenedor del mapa.
@@ -804,7 +792,14 @@ const activeFilters = {
 
 // ════════════════════════════════════════════════════
 // MARKERS
+// En mobile usamos L.circleMarker con renderer canvas:
+// no crea ningún elemento DOM por marker, el mapa va
+// completamente fluido independientemente de cuántas
+// estaciones haya. En desktop se mantienen los divIcon.
 // ════════════════════════════════════════════════════
+const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
+const canvasRenderer = IS_MOBILE ? L.canvas({ padding: 0.5 }) : null;
+
 function makeIcon(tipologia, puntoControl, selected = false) {
   const cfg = ICON_CFG[tipologia] || ICON_CFG["Otros"];
   return L.divIcon({
@@ -818,6 +813,19 @@ function makeIcon(tipologia, puntoControl, selected = false) {
   });
 }
 
+function makeCircleMarker(estacion, selected = false) {
+  const cfg = ICON_CFG[estacion.tipologia] || ICON_CFG["Otros"];
+  return L.circleMarker([estacion.latitud, estacion.longitud], {
+    renderer: canvasRenderer,
+    radius: selected ? 10 : 7,
+    fillColor: cfg.color,
+    fillOpacity: selected ? 1 : 0.85,
+    color: selected ? '#fff' : 'rgba(255,255,255,0.6)',
+    weight: selected ? 2.5 : 1.5,
+    bubblingMouseEvents: false
+  });
+}
+
 function mostrarMarkers(estaciones) {
   const keep = new Set(estaciones.map(e => e.puntoControl));
   Object.keys(markers).forEach(pc => {
@@ -825,27 +833,53 @@ function mostrarMarkers(estaciones) {
   });
   estaciones.forEach(e => {
     const cfg = ICON_CFG[e.tipologia] || ICON_CFG["Otros"];
+    const isSelected = e.puntoControl === selectedPC;
+
+    // Actualizar marker existente
     if (markers[e.puntoControl]) {
-      markers[e.puntoControl].setIcon(makeIcon(e.tipologia, e.puntoControl, e.puntoControl === selectedPC));
+      if (IS_MOBILE) {
+        markers[e.puntoControl].setStyle({
+          radius: isSelected ? 10 : 7,
+          fillOpacity: isSelected ? 1 : 0.85,
+          color: isSelected ? '#fff' : 'rgba(255,255,255,0.6)',
+          weight: isSelected ? 2.5 : 1.5
+        });
+      } else {
+        markers[e.puntoControl].setIcon(makeIcon(e.tipologia, e.puntoControl, isSelected));
+      }
       return;
     }
-    const sensors = [
-      e.pluviometro ? `<span class="tt-chip sb-rain">🌧 Lluvia</span>` : '',
-      e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>` : ''
-    ].filter(Boolean).join('');
 
-    const m = L.marker([e.latitud, e.longitud], {
-      icon: makeIcon(e.tipologia, e.puntoControl, e.puntoControl === selectedPC),
-      riseOnHover: true
-    });
-    m.bindTooltip(`
-      <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
-      <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
-      <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
-      <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
-      <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
-      <div class="tt-chips">${sensors}</div>
-    `, { sticky: true, offset: [14, 0] });
+    // Crear nuevo marker
+    let m;
+    if (IS_MOBILE) {
+      m = makeCircleMarker(e, isSelected);
+      // En mobile el tooltip aparece al tocar (click), no en hover
+      m.bindTooltip(`
+        <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
+        <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
+        <div class="tt-row"><span>Media</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
+        <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
+      `, { sticky: false, offset: [0, -8], direction: 'top' });
+    } else {
+      m = L.marker([e.latitud, e.longitud], {
+        icon: makeIcon(e.tipologia, e.puntoControl, isSelected),
+        riseOnHover: true
+      });
+      const sensors = [
+        e.pluviometro ? `<span class="tt-chip sb-rain">🌧 Lluvia</span>` : '',
+        e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>` : ''
+      ].filter(Boolean).join('');
+      m.bindTooltip(`
+        <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
+        <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
+        <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
+        <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
+        <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
+        <div class="tt-chips">${sensors}</div>
+      `, { sticky: true, offset: [14, 0] });
+    }
+
     m.on('click', () => abrirPanel(e));
     m.addTo(map);
     markers[e.puntoControl] = m;
@@ -976,12 +1010,26 @@ function updateCounts(visible) {
 // ════════════════════════════════════════════════════
 function abrirPanel(estacion) {
   const panel = document.getElementById('detailPanel');
+  // Deseleccionar marker anterior
   if (selectedPC && markers[selectedPC]) {
     const prev = estacionesGlobal.find(x => x.puntoControl === selectedPC);
-    if (prev) markers[selectedPC].setIcon(makeIcon(prev.tipologia, selectedPC, false));
+    if (prev) {
+      if (IS_MOBILE) {
+        markers[selectedPC].setStyle({ radius: 7, fillOpacity: 0.85, color: 'rgba(255,255,255,0.6)', weight: 1.5 });
+      } else {
+        markers[selectedPC].setIcon(makeIcon(prev.tipologia, selectedPC, false));
+      }
+    }
   }
   selectedPC = estacion.puntoControl;
-  if (markers[selectedPC]) markers[selectedPC].setIcon(makeIcon(estacion.tipologia, selectedPC, true));
+  // Seleccionar nuevo marker
+  if (markers[selectedPC]) {
+    if (IS_MOBILE) {
+      markers[selectedPC].setStyle({ radius: 10, fillOpacity: 1, color: '#fff', weight: 2.5 });
+    } else {
+      markers[selectedPC].setIcon(makeIcon(estacion.tipologia, selectedPC, true));
+    }
+  }
 
   panel.classList.add('open');
   document.getElementById('dp-loading').style.display = 'flex';
@@ -1004,7 +1052,13 @@ function cerrarPanel() {
   document.getElementById('detailPanel').classList.remove('open');
   if (selectedPC && markers[selectedPC]) {
     const e = estacionesGlobal.find(x => x.puntoControl === selectedPC);
-    if (e) markers[selectedPC].setIcon(makeIcon(e.tipologia, selectedPC, false));
+    if (e) {
+      if (IS_MOBILE) {
+        markers[selectedPC].setStyle({ radius: 7, fillOpacity: 0.85, color: 'rgba(255,255,255,0.6)', weight: 1.5 });
+      } else {
+        markers[selectedPC].setIcon(makeIcon(e.tipologia, selectedPC, false));
+      }
+    }
   }
   selectedPC = null;
   if (currentChart) { currentChart.destroy(); currentChart = null; }
