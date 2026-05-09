@@ -417,6 +417,7 @@
         gap: 6px;
         /* No ocupa toda la altura — solo lo que necesita */
         bottom: auto;
+        /* pointer-events:none ya está en el padre; los hijos lo activan */
       }
 
       #controls { gap: 6px; }
@@ -495,6 +496,42 @@
       #dp-table > div:first-child { flex-direction: column; align-items: flex-start; gap: 6px; }
       #dp-table > div:first-child > div { width: 100%; display: flex; }
       #dp-table > div:first-child > div .ctab { flex: 1; text-align: center; }
+
+      /* ── Handle visual y botón cerrar ── */
+      /* El ::before del panel hace de handle visual arriba */
+      /* El dp-header sticky necesita top:0 relativo al panel, ok */
+      /* Pero el botón cerrar (absolute top:12px right:14px dentro de dp-header)
+         queda visible siempre — lo que faltaba era que el panel en mobile
+         empieza con el handle de 24px antes del dp-header sticky,
+         así que ajustamos el padding-top del dp-header para que el handle
+         no tape el contenido */
+      #dp-header {
+        padding-top: 8px;  /* el handle ::before ya ocupa 24px encima */
+        padding-left: 14px;
+        padding-right: 14px;
+        padding-bottom: 10px;
+      }
+      /* El botón cerrar en mobile lo hacemos más grande y accesible */
+      #dp-close {
+        width: 34px; height: 34px;
+        font-size: 15px;
+        top: 8px; right: 12px;
+      }
+
+      /* ── CRÍTICO: evitar que el mapa vaya lento en touch ──
+         Leaflet necesita touch-action libre en el contenedor del mapa.
+         El leftSidebar y detailPanel no deben interferir con los eventos
+         del mapa cuando están cerrados/fuera de pantalla. */
+      #map { touch-action: pan-x pan-y; }
+
+      /* Cuando el panel está cerrado en mobile, aseguramos que no
+         captura eventos touch que van al mapa */
+      #detailPanel { pointer-events: none; }
+      #detailPanel.open { pointer-events: all; }
+
+      /* El filterPanel cerrado tampoco captura eventos */
+      #filterPanel { pointer-events: none; }
+      #filterPanel.open { pointer-events: all; }
 
       /* Nota footer tabla más corta */
       #dp-table > div:last-child { font-size: 8.5px; line-height: 1.8; }
@@ -682,7 +719,6 @@
 // ════════════════════════════════════════════════════
 const API_BASE_LOCAL = 'http://localhost:8080';
 const API_BASE = 'https://meteorologia-production-4380.up.railway.app';
-
 
 const ICON_CFG = {
   "Centrales Hidroeléctricas": { color: "#e040fb", emoji: "⚡" },
@@ -1257,53 +1293,46 @@ function renderTable(series, media, sort = 'orig') {
 }
 
 // ════════════════════════════════════════════════════
-// MOBILE: swipe-down para cerrar el panel de detalle
+// MOBILE: swipe-down en el handle para cerrar el panel
+// Solo escucha en el handle (::before area, primeros 44px)
+// y SOLO cuando el panel está abierto, para no interferir
+// con los eventos touch del mapa de Leaflet.
 // ════════════════════════════════════════════════════
 (function() {
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
   const panel = document.getElementById('detailPanel');
-  let startY = 0, startBottom = 0, dragging = false;
+  const HANDLE_H = 44; // px desde el top del panel considerados "handle"
+  let startY = 0, dragging = false;
 
   panel.addEventListener('touchstart', e => {
-    // Solo activar si el toque empieza en la zona superior del panel (handle area)
+    if (!isMobile() || !panel.classList.contains('open')) return;
     const touch = e.touches[0];
     const rect = panel.getBoundingClientRect();
-    if (touch.clientY - rect.top > 60) return; // solo en los primeros 60px
+    // Solo activar en la zona del handle visual superior
+    if (touch.clientY - rect.top > HANDLE_H) return;
     startY = touch.clientY;
-    startBottom = 0; // panel está en bottom:0 cuando abierto
     dragging = true;
     panel.style.transition = 'none';
+    // NO llamamos e.preventDefault() aquí para no bloquear el scroll del panel
   }, { passive: true });
 
   panel.addEventListener('touchmove', e => {
     if (!dragging) return;
     const dy = e.touches[0].clientY - startY;
-    if (dy > 0) {
-      panel.style.bottom = `-${dy}px`;
-    }
+    if (dy > 0) panel.style.bottom = `-${dy}px`;
   }, { passive: true });
 
   panel.addEventListener('touchend', e => {
     if (!dragging) return;
     dragging = false;
     panel.style.transition = '';
-    const dy = startY - e.changedTouches[0].clientY; // negativo = swipe down
-    if (dy < -80) {
-      // Swipe down suficiente → cerrar
+    const dy = e.changedTouches[0].clientY - startY; // positivo = swipe down
+    if (dy > 80) {
       cerrarPanel();
     } else {
-      // Volver a posición abierta
       panel.style.bottom = '0';
     }
-  });
-
-  // En mobile, deshabilitar tooltips de Leaflet (no tienen sentido en touch)
-  const isMobile = window.matchMedia('(max-width: 768px)').matches;
-  if (isMobile) {
-    // Desactivar tooltips bind en markers cuando se carguen
-    const origMostrar = mostrarMarkers;
-    // Los tooltips ya están creados con sticky:true, funcionan bien en mobile
-    // solo desactivamos el hover que no existe en touch; no hay nada que hacer
-  }
+  }, { passive: true });
 })();
 
 fetch(`${API_BASE}/estaciones`)
