@@ -77,11 +77,11 @@
     .hstats { display: flex; align-items: center; }
     .hstat { text-align: center; padding: 0 16px; }
     .hstat-v { font-family: var(--font-mono); font-size: 17px; font-weight: 700; color: var(--accent); display: block; line-height: 1; }
-    .hstat-l { font-size: 8px; color: var(--text-dimmer); text-transform: uppercase; letter-spacing: 0.1em; }
+    .hstat-l { font-size: 8px; text-transform: uppercase; letter-spacing: 0.1em; }
     .hstat-sep { width: 1px; height: 26px; background: var(--border2); }
 
     .header-right { display: flex; align-items: center; gap: 8px; }
-    .badge { font-size: 9.5px; color: var(--text-dimmer); font-family: var(--font-mono); background: var(--surface2); border: 1px solid var(--border); padding: 3px 9px; border-radius: 20px; }
+    .badge { font-size: 9.5px; font-family: var(--font-mono); background: var(--surface2); border: 1px solid var(--border); padding: 3px 9px; border-radius: 20px; }
     .badge em { color: var(--orange); font-style: normal; }
 
     /* ─── MAP ────────────────────────────────────────── */
@@ -420,6 +420,41 @@
       padding-top: 8px; border-top: 1px solid var(--border);
     }
 
+
+    /* ─── Selector CHG / HIDROSUR ─────────────────────── */
+    #procedenciaSelector {
+      pointer-events: all;
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+      flex-shrink: 0;
+    }
+    .proc-btn {
+      flex: 1;
+      padding: 8px 0;
+      font-family: var(--font);
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-align: center;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      transition: all 0.2s;
+      position: relative;
+    }
+    .proc-btn:first-child { border-right: 1px solid var(--border2); }
+    .proc-btn:hover { color: var(--text); }
+    .proc-btn.active {
+      background: var(--accent);
+      color: var(--bg);
+    }
+    .proc-btn .proc-label { display: block; font-size: 9px; font-weight: 400; opacity: 0.75; letter-spacing: 0.06em; }
+
     /* ═══════════════════════════════════════════════════
        MOBILE — max-width: 768px
        Solo afecta a pantallas pequeñas. El escritorio
@@ -469,6 +504,10 @@
       }
 
       #controls { gap: 6px; }
+
+      /* Selector en mobile: texto más compacto */
+      .proc-btn { font-size: 12px; padding: 10px 0; }
+      .proc-btn .proc-label { font-size: 8px; }
 
       #searchBox { border-radius: 10px; }
       #searchInput { font-size: 15px; padding: 11px 0; } /* evita zoom en iOS */
@@ -639,6 +678,17 @@
 <!-- LEFT SIDEBAR: controls + filter panel stacked vertically, contained -->
 <div id="leftSidebar">
   <div id="controls">
+    <!-- Selector CHG / HIDROSUR -->
+    <div id="procedenciaSelector">
+      <button class="proc-btn active" data-proc="CHG">
+        CHG
+        <span class="proc-label">Guadalquivir</span>
+      </button>
+      <button class="proc-btn" data-proc="HIDROSUR">
+        HIDROSUR
+        <span class="proc-label">Red propia</span>
+      </button>
+    </div>
     <div id="searchBox">
       <span class="s-icon">🔍</span>
       <input type="text" id="searchInput" placeholder="Buscar estación o municipio…">
@@ -664,7 +714,7 @@
         <div class="fp-sec-title">Tipología</div>
         <div class="fp-chips" id="chipsTipologia"></div>
       </div>
-      <div class="fp-section">
+      <div class="fp-section" style="display:none">
         <div class="fp-sec-title">Sensores</div>
         <div class="fp-chips" id="chipsSensores">
           <div class="fp-chip" data-sensor="pluviometro"><span>🌧</span> Pluviómetro</div>
@@ -700,7 +750,7 @@
         <span>📍 <span id="dp-municipio">—</span></span>
         <span>📅 <span id="dp-periodo">—</span></span>
       </div>
-      <div id="dp-sensors"></div>
+      <div id="dp-sensors" style="display:none"></div>
     </div>
 
     <div id="dp-kpis">
@@ -785,6 +835,7 @@
 const API_BASE = 'https://meteorologia-production-4380.up.railway.app';
 
 const ICON_CFG = {
+  // CHG
   "Centrales Hidroeléctricas": { color: "#e040fb", emoji: "⚡" },
   "Aforos Río":                { color: "#ff9800", emoji: "🌊" },
   "Marcos Control":            { color: "#9c27b0", emoji: "📐" },
@@ -793,6 +844,9 @@ const ICON_CFG = {
   "Impulsiones":               { color: "#8d6e63", emoji: "⬆" },
   "Embalses":                  { color: "#1e88e5", emoji: "🏛" },
   "Pluviómetros":              { color: "#26a69a", emoji: "🌧" },
+  // HIDROSUR
+  "Meteorológica":             { color: "#f9a825", emoji: "🌤" },
+  "Distribución":              { color: "#00bcd4", emoji: "🔀" },
   "Otros":                     { color: "#546e7a", emoji: "📍" }
 };
 
@@ -859,6 +913,7 @@ let currentMedia = 0;
 let currentColor = '';
 let currentChartType = 'bar';
 let currentSort = 'orig';
+let procedenciaActual = 'CHG'; // CHG por defecto
 
 const activeFilters = {
   provincias: new Set(),
@@ -914,7 +969,7 @@ function mostrarMarkers(estaciones) {
 
     const sensors = [
       e.pluviometro ? `<span class="tt-chip sb-rain">🌧 Lluvia</span>` : '',
-      e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>`  : ''
+      e.termometro  ? `<span class="tt-chip sb-temp" style="display: none">🌡 Temp</span>`  : ''
     ].filter(Boolean).join('');
 
     // En mobile no hay hover: el tooltip se superpone al preview card. Solo en desktop.
@@ -958,6 +1013,12 @@ function mostrarMarkers(estaciones) {
 function poblarFiltros(estaciones) {
   const provs = [...new Set(estaciones.map(e => e.provincia))].sort();
   const tipos = [...new Set(estaciones.map(e => e.tipologia))].sort();
+
+  // Limpiar chips anteriores (necesario al cambiar procedencia)
+  document.getElementById('chipsProvincia').innerHTML = '';
+  document.getElementById('chipsTipologia').innerHTML = '';
+  activeFilters.provincias.clear();
+  activeFilters.tipologias.clear();
 
   const cpv = document.getElementById('chipsProvincia');
   provs.forEach(p => {
@@ -1462,27 +1523,39 @@ function cerrarMobPreview() {
   mobPreviewEstacion = null;
 }
 
-// El preview card al tocarlo abre el panel completo.
-// Usamos touchend para anticiparnos al click sintético de Leaflet.
+// ── Preview card: interacción táctil ─────────────────────────────────
+// Usamos un flag para que map.on('click') no interfiera cuando
+// el usuario toca dentro del preview card.
 let _previewTouched = false;
+let _closeTouched = false; // flag específico para el botón X
 
-document.getElementById('mobPreview').addEventListener('touchstart', () => {
+document.getElementById('mobPreview').addEventListener('touchstart', e => {
   _previewTouched = true;
 }, { passive: true });
 
 document.getElementById('mobPreview').addEventListener('touchend', e => {
-  // Pequeño delay para que el flag esté activo cuando Leaflet dispare su click
-  setTimeout(() => { _previewTouched = false; }, 300);
+  setTimeout(() => { _previewTouched = false; }, 350);
 }, { passive: true });
 
-document.getElementById('mobPreviewInner').addEventListener('touchend', e => {
-  if (!mobPreviewEstacion) return;
-  document.getElementById('mobPreview').classList.remove('visible');
-  abrirPanel(mobPreviewEstacion);
-}, { passive: true });
+// Botón X — touchstart+touchend para máxima respuesta y sin conflictos
+document.getElementById('mobPreviewClose').addEventListener('touchstart', e => {
+  _closeTouched = true;
+  e.stopPropagation(); // evitar que mobPreview reciba el touchstart
+}, { passive: false });
 
 document.getElementById('mobPreviewClose').addEventListener('touchend', e => {
+  if (!_closeTouched) return;
+  _closeTouched = false;
+  _previewTouched = false; // resetear para que el map.on click no lo bloquee
+  e.stopPropagation();
   cerrarMobPreview();
+}, { passive: false });
+
+// Inner: al tocar abre el panel (excluyendo el botón X)
+document.getElementById('mobPreviewInner').addEventListener('touchend', e => {
+  if (!mobPreviewEstacion || _closeTouched) return;
+  document.getElementById('mobPreview').classList.remove('visible');
+  abrirPanel(mobPreviewEstacion);
 }, { passive: true });
 
 // Swipe-down en el handle del panel completo para cerrarlo
@@ -1518,52 +1591,68 @@ document.getElementById('mobPreviewClose').addEventListener('touchend', e => {
 
 // ════════════════════════════════════════════════════
 // CACHE GLOBAL DE SERIES
-// En la primera carga, después de pintar los markers,
-// descargamos en background los datos de series de
-// TODAS las estaciones y los guardamos en caché.
-// Al tocar un marker la info aparece instantánea.
 // ════════════════════════════════════════════════════
 const seriesCache = {};
 
-function prefetchAllSeries(estaciones) {
-  // Lanzamos las peticiones de todas las estaciones en paralelo,
-  // en lotes de 10 para no saturar el servidor.
-  const BATCH = 10;
-  let i = 0;
-  function nextBatch() {
-    const batch = estaciones.slice(i, i + BATCH);
-    if (!batch.length) return;
-    i += BATCH;
-    Promise.all(
-      batch.map(e =>
-        fetch(`${API_BASE}/estacion/${e.puntoControl}`)
-          .then(r => r.json())
-          .then(data => { seriesCache[e.puntoControl] = data; })
-          .catch(() => {})
-      )
-    ).then(() => setTimeout(nextBatch, 50)); // pequeña pausa entre lotes
-  }
-  nextBatch();
+// prefetchAllSeries eliminado: la carga de series ocurre solo al pulsar una estación
+
+// ════════════════════════════════════════════════════
+// CARGA DE ESTACIONES POR PROCEDENCIA
+// Envía ?procedencia=CHG o ?procedencia=HIDROSUR
+// ════════════════════════════════════════════════════
+function cargarEstaciones(procedencia) {
+  procedenciaActual = procedencia;
+
+  // Cerrar panel y preview si están abiertos
+  cerrarPanel();
+  if (IS_MOBILE) cerrarMobPreview();
+
+  // Limpiar markers existentes
+  Object.keys(markers).forEach(pc => { map.removeLayer(markers[pc]); });
+  Object.keys(markers).forEach(pc => { delete markers[pc]; });
+  selectedPC = null;
+
+  // Resetear filtros de búsqueda pero mantener la UI
+  activeFilters.search = '';
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchClear').style.display = 'none';
+
+  // Actualizar botones del selector
+  document.querySelectorAll('.proc-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.proc === procedencia);
+  });
+
+  fetch(`${API_BASE}/estaciones/${procedencia}`)
+    .then(r => r.json())
+    .then(estaciones => {
+      estacionesGlobal = estaciones;
+      document.getElementById('hs-total').textContent = estaciones.length;
+      document.getElementById('hs-tipos').textContent = new Set(estaciones.map(e => e.tipologia)).size;
+      const mobVis = document.getElementById('mob-vis');
+      if (mobVis) mobVis.textContent = estaciones.length;
+      poblarFiltros(estaciones);
+      buildLegend(estaciones);
+      mostrarMarkers(estaciones);
+  
+    })
+    .catch(() => {
+      ['hs-total','hs-visible','lc-vis','lc-tot'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0';
+      });
+    });
 }
 
-fetch(`${API_BASE}/estaciones`)
-  .then(r => r.json())
-  .then(estaciones => {
-    estacionesGlobal = estaciones;
-    document.getElementById('hs-total').textContent = estaciones.length;
-    document.getElementById('hs-tipos').textContent = new Set(estaciones.map(e => e.tipologia)).size;
-    poblarFiltros(estaciones);
-    buildLegend(estaciones);
-    mostrarMarkers(estaciones);
-    // Prefetch en background tras un pequeño delay para no competir con el pintado inicial
-    setTimeout(() => prefetchAllSeries(estaciones), 800);
-  })
-  .catch(() => {
-    ['hs-total','hs-visible','lc-vis','lc-tot'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = '0';
-    });
+// ── Listener de los botones de procedencia ────────────────────────────
+document.querySelectorAll('.proc-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.proc === procedenciaActual) return; // ya activo
+    cargarEstaciones(btn.dataset.proc);
   });
+});
+
+// ── Carga inicial con CHG ──────────────────────────────────────────────
+cargarEstaciones('CHG');
 </script>
 </body>
 </html>
