@@ -842,7 +842,8 @@ const provinciasLayer = L.geoJSON(provincias, {
     fillColor: "#0055aa",
     fillOpacity: 0.05,
     dashArray: '6 5'
-  }
+  },
+  interactive: false   // no intercepta clicks ni hover, los eventos llegan a los markers
 }).addTo(map);
 provinciasLayer.bringToBack();
 
@@ -916,15 +917,18 @@ function mostrarMarkers(estaciones) {
       e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>`  : ''
     ].filter(Boolean).join('');
 
-    m.bindTooltip(`
-      <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
-      <div class="tt-row"><span>ID</span><span class="tt-v" style="color:${cfg.color};font-weight:700">${e.puntoControl}</span></div>
-      <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
-      <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
-      <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
-      <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
-      <div class="tt-chips">${sensors}</div>
-    `, { sticky: true, offset: [10, -4] });
+    // En mobile no hay hover: el tooltip se superpone al preview card. Solo en desktop.
+    if (!IS_MOBILE) {
+      m.bindTooltip(`
+        <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
+        <div class="tt-row"><span>ID</span><span class="tt-v" style="color:${cfg.color};font-weight:700">${e.puntoControl}</span></div>
+        <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
+        <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
+        <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
+        <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
+        <div class="tt-chips">${sensors}</div>
+      `, { sticky: true, offset: [10, -4] });
+    }
 
     m.on('click', () => {
       if (IS_MOBILE) {
@@ -1130,6 +1134,8 @@ function cerrarPanel() {
 
 document.getElementById('dp-close').addEventListener('click', cerrarPanel);
 map.on('click', () => {
+  // En mobile: si el tap fue sobre el preview card, no cerrar nada
+  if (IS_MOBILE && _previewTouched) return;
   cerrarPanel();
   if (IS_MOBILE) cerrarMobPreview();
 });
@@ -1456,17 +1462,28 @@ function cerrarMobPreview() {
   mobPreviewEstacion = null;
 }
 
-// El preview card al tocarlo abre el panel completo
-document.getElementById('mobPreviewInner').addEventListener('click', () => {
+// El preview card al tocarlo abre el panel completo.
+// Usamos touchend para anticiparnos al click sintético de Leaflet.
+let _previewTouched = false;
+
+document.getElementById('mobPreview').addEventListener('touchstart', () => {
+  _previewTouched = true;
+}, { passive: true });
+
+document.getElementById('mobPreview').addEventListener('touchend', e => {
+  // Pequeño delay para que el flag esté activo cuando Leaflet dispare su click
+  setTimeout(() => { _previewTouched = false; }, 300);
+}, { passive: true });
+
+document.getElementById('mobPreviewInner').addEventListener('touchend', e => {
   if (!mobPreviewEstacion) return;
   document.getElementById('mobPreview').classList.remove('visible');
   abrirPanel(mobPreviewEstacion);
-});
+}, { passive: true });
 
-document.getElementById('mobPreviewClose').addEventListener('click', e => {
-  e.stopPropagation();
+document.getElementById('mobPreviewClose').addEventListener('touchend', e => {
   cerrarMobPreview();
-});
+}, { passive: true });
 
 // Swipe-down en el handle del panel completo para cerrarlo
 (function() {
