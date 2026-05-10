@@ -372,6 +372,54 @@
     ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
 
+    /* ─── Mobile preview card (global, solo visible en mobile) ─── */
+    #mobPreview {
+      display: none; /* oculto en desktop */
+      position: fixed;
+      bottom: calc(var(--bar-h) + 12px);
+      left: 12px; right: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 16px;
+      padding: 14px 16px;
+      z-index: 3000;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.65);
+      cursor: pointer;
+      transform: translateY(20px);
+      opacity: 0;
+      transition: transform 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.22s ease;
+      pointer-events: none;
+    }
+    #mobPreview.visible {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: all;
+    }
+    #mobPreviewClose {
+      position: absolute; top: 10px; right: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text-dim); cursor: pointer;
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; transition: all 0.15s;
+      z-index: 1;
+    }
+    #mobPreviewClose:hover { background: var(--red); color: #fff; }
+    #mpBadge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.1em; padding: 2px 9px; border-radius: 20px;
+      margin-bottom: 6px; border: 1px solid;
+    }
+    #mpNombre { font-size: 15px; font-weight: 800; line-height: 1.25; margin-bottom: 5px; padding-right: 30px; }
+    #mpMeta { font-size: 10px; color: var(--text-dim); font-family: var(--font-mono); display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 7px; }
+    #mpSensors { display: flex; gap: 5px; margin-bottom: 10px; }
+    #mpTap {
+      font-size: 11px; color: var(--accent); font-weight: 600;
+      display: flex; align-items: center; gap: 6px;
+      padding-top: 8px; border-top: 1px solid var(--border);
+    }
+
     /* ═══════════════════════════════════════════════════
        MOBILE — max-width: 768px
        Solo afecta a pantallas pequeñas. El escritorio
@@ -432,11 +480,27 @@
 
       .fp-chip { font-size: 11px; padding: 5px 10px; }
 
+      /* ── Mobile preview card visible en mobile ── */
+      #mobPreview { display: block; }
+
       /* ── Bottom bar mobile: solo conteo ── */
       #legendItems { display: none !important; }
       #bottomBar .leg-sep { display: none; }
       #bottomBar { justify-content: center; padding: 0 12px; }
       #legCount { margin-left: 0; font-size: 11px; }
+
+      /* ── dp-content: scroll interno en mobile ── */
+      /* El panel tiene height fija (85vh). El dp-header es sticky top:0.
+         El resto (dp-content sin header) debe ser scrollable. */
+      #detailPanel { overflow: hidden; } /* evitar scroll del panel entero */
+      #dp-content {
+        height: calc(100% - 1px); /* ocupa todo menos el sticky header */
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      #dp-loading {
+        height: 100%;
+      }
 
       /* ── Detail panel: sube desde abajo, full width ── */
       #detailPanel {
@@ -611,6 +675,18 @@
   </div>
 </div>
 
+<!-- MOBILE PREVIEW CARD (aparece al tocar un marker en mobile) -->
+<div id="mobPreview">
+  <button id="mobPreviewClose">✕</button>
+  <div id="mobPreviewInner">
+    <div id="mpBadge"></div>
+    <div id="mpNombre"></div>
+    <div id="mpMeta"></div>
+    <div id="mpSensors"></div>
+    <div id="mpTap">Toca para ver el historial completo →</div>
+  </div>
+</div>
+
 <!-- DETAIL PANEL (right slide-in) -->
 <div id="detailPanel">
   <div id="dp-loading"><div class="spin-ring"></div><div class="spin-label">Cargando datos…</div></div>
@@ -620,6 +696,7 @@
       <div id="dp-tipo-badge">—</div>
       <div id="dp-nombre">—</div>
       <div id="dp-meta">
+        <span>🆔 <span id="dp-pc" style="color:var(--accent);font-weight:700">—</span></span>
         <span>📍 <span id="dp-municipio">—</span></span>
         <span>📅 <span id="dp-periodo">—</span></span>
       </div>
@@ -705,7 +782,6 @@
 // ════════════════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════════════════
-const API_BASE_LOCAL = 'http://localhost:8080';
 const API_BASE = 'https://meteorologia-production-4380.up.railway.app';
 
 const ICON_CFG = {
@@ -791,99 +867,83 @@ const activeFilters = {
 };
 
 // ════════════════════════════════════════════════════
-// MARKERS
-// En mobile usamos L.circleMarker con renderer canvas:
-// no crea ningún elemento DOM por marker, el mapa va
-// completamente fluido independientemente de cuántas
-// estaciones haya. En desktop se mantienen los divIcon.
+// MARKERS — canvas renderer para móvil Y escritorio
+//
+// L.circleMarker + L.canvas() pinta todos los markers
+// en un único <canvas>, sin nodos DOM individuales.
+// Elimina el lag tanto en desktop como en mobile con
+// muchas estaciones visibles simultáneamente.
 // ════════════════════════════════════════════════════
 const IS_MOBILE = window.matchMedia('(max-width: 768px)').matches;
-const canvasRenderer = IS_MOBILE ? L.canvas({ padding: 0.5 }) : null;
+const canvasRenderer = L.canvas({ padding: 0.5 });
 
-function makeIcon(tipologia, puntoControl, selected = false) {
-  const cfg = ICON_CFG[tipologia] || ICON_CFG["Otros"];
-  return L.divIcon({
-    className: 'custom-marker',
-    iconSize: [36, 36], iconAnchor: [18, 18],
-    html: `<div class="${selected ? 'mk-sel' : ''}">
-      <div class="mk-outer" style="background:${cfg.color}">
-        <div class="mk-label">${puntoControl}</div>
-      </div>
-    </div>`
-  });
-}
+const STYLE_NORMAL   = { radius: 7,  fillOpacity: 0.88, weight: 1.5 };
+const STYLE_SELECTED = { radius: 11, fillOpacity: 1.00, weight: 2.5 };
 
-function makeCircleMarker(estacion, selected = false) {
-  const cfg = ICON_CFG[estacion.tipologia] || ICON_CFG["Otros"];
-  return L.circleMarker([estacion.latitud, estacion.longitud], {
-    renderer: canvasRenderer,
-    radius: selected ? 10 : 7,
-    fillColor: cfg.color,
-    fillOpacity: selected ? 1 : 0.85,
-    color: selected ? '#fff' : 'rgba(255,255,255,0.6)',
-    weight: selected ? 2.5 : 1.5,
+function markerStyle(color, selected) {
+  const base = selected ? STYLE_SELECTED : STYLE_NORMAL;
+  return {
+    ...base,
+    fillColor: color,
+    color: selected ? '#ffffff' : 'rgba(255,255,255,0.55)',
     bubblingMouseEvents: false
-  });
+  };
 }
 
 function mostrarMarkers(estaciones) {
   const keep = new Set(estaciones.map(e => e.puntoControl));
+
   Object.keys(markers).forEach(pc => {
     if (!keep.has(pc)) { map.removeLayer(markers[pc]); delete markers[pc]; }
   });
+
   estaciones.forEach(e => {
     const cfg = ICON_CFG[e.tipologia] || ICON_CFG["Otros"];
     const isSelected = e.puntoControl === selectedPC;
 
-    // Actualizar marker existente
     if (markers[e.puntoControl]) {
-      if (IS_MOBILE) {
-        markers[e.puntoControl].setStyle({
-          radius: isSelected ? 10 : 7,
-          fillOpacity: isSelected ? 1 : 0.85,
-          color: isSelected ? '#fff' : 'rgba(255,255,255,0.6)',
-          weight: isSelected ? 2.5 : 1.5
-        });
-      } else {
-        markers[e.puntoControl].setIcon(makeIcon(e.tipologia, e.puntoControl, isSelected));
-      }
+      markers[e.puntoControl].setStyle(markerStyle(cfg.color, isSelected));
       return;
     }
 
-    // Crear nuevo marker
-    let m;
-    if (IS_MOBILE) {
-      m = makeCircleMarker(e, isSelected);
-      // En mobile el tooltip aparece al tocar (click), no en hover
-      m.bindTooltip(`
-        <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
-        <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
-        <div class="tt-row"><span>Media</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
-        <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
-      `, { sticky: false, offset: [0, -8], direction: 'top' });
-    } else {
-      m = L.marker([e.latitud, e.longitud], {
-        icon: makeIcon(e.tipologia, e.puntoControl, isSelected),
-        riseOnHover: true
-      });
-      const sensors = [
-        e.pluviometro ? `<span class="tt-chip sb-rain">🌧 Lluvia</span>` : '',
-        e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>` : ''
-      ].filter(Boolean).join('');
-      m.bindTooltip(`
-        <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
-        <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
-        <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
-        <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
-        <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
-        <div class="tt-chips">${sensors}</div>
-      `, { sticky: true, offset: [14, 0] });
-    }
+    const m = L.circleMarker([e.latitud, e.longitud], {
+      renderer: canvasRenderer,
+      ...markerStyle(cfg.color, isSelected)
+    });
 
-    m.on('click', () => abrirPanel(e));
+    const sensors = [
+      e.pluviometro ? `<span class="tt-chip sb-rain">🌧 Lluvia</span>` : '',
+      e.termometro  ? `<span class="tt-chip sb-temp">🌡 Temp</span>`  : ''
+    ].filter(Boolean).join('');
+
+    m.bindTooltip(`
+      <div class="tt-name" style="color:${cfg.color}">${cfg.emoji} ${e.nombre}</div>
+      <div class="tt-row"><span>ID</span><span class="tt-v" style="color:${cfg.color};font-weight:700">${e.puntoControl}</span></div>
+      <div class="tt-row"><span>Tipo</span><span class="tt-v">${e.tipologia}</span></div>
+      <div class="tt-row"><span>Media histórica</span><span class="tt-v">${e.media.toFixed(1)} mm</span></div>
+      <div class="tt-row"><span>Período</span><span class="tt-v">${e.periodo}</span></div>
+      <div class="tt-row"><span>Municipio</span><span class="tt-v">${e.municipio}</span></div>
+      <div class="tt-chips">${sensors}</div>
+    `, { sticky: true, offset: [10, -4] });
+
+    m.on('click', () => {
+      if (IS_MOBILE) {
+        // Actualizar estilo de marker seleccionado
+        if (selectedPC && markers[selectedPC]) {
+          const prev = estacionesGlobal.find(x => x.puntoControl === selectedPC);
+          if (prev) markers[selectedPC].setStyle(markerStyle((ICON_CFG[prev.tipologia]||ICON_CFG["Otros"]).color, false));
+        }
+        selectedPC = e.puntoControl;
+        markers[e.puntoControl].setStyle(markerStyle(cfg.color, true));
+        mostrarMobPreview(e);
+      } else {
+        abrirPanel(e);
+      }
+    });
     m.addTo(map);
     markers[e.puntoControl] = m;
   });
+
   updateCounts(estaciones.length);
   document.getElementById('noResults').style.display = estaciones.length === 0 ? 'block' : 'none';
 }
@@ -1010,54 +1070,58 @@ function updateCounts(visible) {
 // ════════════════════════════════════════════════════
 function abrirPanel(estacion) {
   const panel = document.getElementById('detailPanel');
+
   // Deseleccionar marker anterior
   if (selectedPC && markers[selectedPC]) {
     const prev = estacionesGlobal.find(x => x.puntoControl === selectedPC);
     if (prev) {
-      if (IS_MOBILE) {
-        markers[selectedPC].setStyle({ radius: 7, fillOpacity: 0.85, color: 'rgba(255,255,255,0.6)', weight: 1.5 });
-      } else {
-        markers[selectedPC].setIcon(makeIcon(prev.tipologia, selectedPC, false));
-      }
+      const cfg = ICON_CFG[prev.tipologia] || ICON_CFG["Otros"];
+      markers[selectedPC].setStyle(markerStyle(cfg.color, false));
     }
   }
   selectedPC = estacion.puntoControl;
-  // Seleccionar nuevo marker
   if (markers[selectedPC]) {
-    if (IS_MOBILE) {
-      markers[selectedPC].setStyle({ radius: 10, fillOpacity: 1, color: '#fff', weight: 2.5 });
-    } else {
-      markers[selectedPC].setIcon(makeIcon(estacion.tipologia, selectedPC, true));
-    }
+    const cfg = ICON_CFG[estacion.tipologia] || ICON_CFG["Otros"];
+    markers[selectedPC].setStyle(markerStyle(cfg.color, true));
   }
 
-  panel.classList.add('open');
-  document.getElementById('dp-loading').style.display = 'flex';
-  document.getElementById('dp-content').style.display = 'none';
   if (currentChart) { currentChart.destroy(); currentChart = null; }
+  panel.classList.add('open');
 
   const cfg = ICON_CFG[estacion.tipologia] || ICON_CFG["Otros"];
+  const cached = seriesCache[estacion.puntoControl];
 
-  fetch(`${API_BASE}/estacion/${estacion.puntoControl}`)
-    .then(r => r.json())
-    .then(data => renderPanel(data, cfg))
-    .catch(() => renderPanel(estacion, cfg))
-    .finally(() => {
-      document.getElementById('dp-loading').style.display = 'none';
-      document.getElementById('dp-content').style.display = 'block';
-    });
+  if (cached) {
+    // Datos ya en caché: mostrar sin spinner
+    document.getElementById('dp-loading').style.display = 'none';
+    document.getElementById('dp-content').style.display = 'block';
+    renderPanel(cached, cfg);
+  } else {
+    // Aún no cacheado: mostrar spinner y fetch
+    document.getElementById('dp-loading').style.display = 'flex';
+    document.getElementById('dp-content').style.display = 'none';
+    fetch(`${API_BASE}/estacion/${estacion.puntoControl}`)
+      .then(r => r.json())
+      .then(data => {
+        seriesCache[estacion.puntoControl] = data;
+        renderPanel(data, cfg);
+      })
+      .catch(() => renderPanel(estacion, cfg))
+      .finally(() => {
+        document.getElementById('dp-loading').style.display = 'none';
+        document.getElementById('dp-content').style.display = 'block';
+      });
+  }
 }
 
 function cerrarPanel() {
   document.getElementById('detailPanel').classList.remove('open');
+  document.getElementById('mobPreview').classList.remove('visible');
   if (selectedPC && markers[selectedPC]) {
     const e = estacionesGlobal.find(x => x.puntoControl === selectedPC);
     if (e) {
-      if (IS_MOBILE) {
-        markers[selectedPC].setStyle({ radius: 7, fillOpacity: 0.85, color: 'rgba(255,255,255,0.6)', weight: 1.5 });
-      } else {
-        markers[selectedPC].setIcon(makeIcon(e.tipologia, selectedPC, false));
-      }
+      const cfg = ICON_CFG[e.tipologia] || ICON_CFG["Otros"];
+      markers[selectedPC].setStyle(markerStyle(cfg.color, false));
     }
   }
   selectedPC = null;
@@ -1065,7 +1129,10 @@ function cerrarPanel() {
 }
 
 document.getElementById('dp-close').addEventListener('click', cerrarPanel);
-map.on('click', () => cerrarPanel());
+map.on('click', () => {
+  cerrarPanel();
+  if (IS_MOBILE) cerrarMobPreview();
+});
 
 // ════════════════════════════════════════════════════
 // RENDER PANEL
@@ -1076,6 +1143,7 @@ function renderPanel(data, cfg) {
   badge.style.cssText += `;color:${cfg.color};border-color:${cfg.color}55;background:${cfg.color}18`;
 
   document.getElementById('dp-nombre').textContent = data.nombre;
+  document.getElementById('dp-pc').textContent = data.puntoControl || '';
   document.getElementById('dp-municipio').textContent = `${data.municipio}, ${data.provincia}`;
   document.getElementById('dp-periodo').textContent = data.periodo || '—';
 
@@ -1347,27 +1415,73 @@ function renderTable(series, media, sort = 'orig') {
 }
 
 // ════════════════════════════════════════════════════
-// MOBILE: swipe-down en el handle para cerrar el panel
-// Solo escucha en el handle (::before area, primeros 44px)
-// y SOLO cuando el panel está abierto, para no interferir
-// con los eventos touch del mapa de Leaflet.
+// MOBILE: preview card + panel completo con scroll
 // ════════════════════════════════════════════════════
+let mobPreviewEstacion = null;
+
+function mostrarMobPreview(estacion) {
+  const cfg = ICON_CFG[estacion.tipologia] || ICON_CFG["Otros"];
+  mobPreviewEstacion = estacion;
+
+  const badge = document.getElementById('mpBadge');
+  badge.textContent = `${cfg.emoji} ${estacion.tipologia}`;
+  badge.style.cssText = `color:${cfg.color};border-color:${cfg.color}55;background:${cfg.color}18`;
+
+  document.getElementById('mpNombre').textContent = estacion.nombre;
+  document.getElementById('mpMeta').innerHTML =
+    `<span>🆔 <b style="color:${cfg.color}">${estacion.puntoControl}</b></span>` +
+    `<span>📍 ${estacion.municipio}, ${estacion.provincia}</span>` +
+    `<span>📊 Media: <b>${estacion.media.toFixed(1)} mm</b></span>` +
+    `<span>📅 ${estacion.periodo}</span>`;
+
+  document.getElementById('mpSensors').innerHTML = [
+    estacion.pluviometro ? `<span class="sbadge sb-rain">🌧 Pluviómetro</span>` : '',
+    estacion.termometro  ? `<span class="sbadge sb-temp">🌡 Termómetro</span>`  : ''
+  ].filter(Boolean).join('');
+
+  document.getElementById('mobPreview').classList.add('visible');
+}
+
+function cerrarMobPreview() {
+  document.getElementById('mobPreview').classList.remove('visible');
+  // Deseleccionar marker
+  if (selectedPC && markers[selectedPC]) {
+    const e = estacionesGlobal.find(x => x.puntoControl === selectedPC);
+    if (e) {
+      const cfg = ICON_CFG[e.tipologia] || ICON_CFG["Otros"];
+      markers[selectedPC].setStyle(markerStyle(cfg.color, false));
+    }
+  }
+  selectedPC = null;
+  mobPreviewEstacion = null;
+}
+
+// El preview card al tocarlo abre el panel completo
+document.getElementById('mobPreviewInner').addEventListener('click', () => {
+  if (!mobPreviewEstacion) return;
+  document.getElementById('mobPreview').classList.remove('visible');
+  abrirPanel(mobPreviewEstacion);
+});
+
+document.getElementById('mobPreviewClose').addEventListener('click', e => {
+  e.stopPropagation();
+  cerrarMobPreview();
+});
+
+// Swipe-down en el handle del panel completo para cerrarlo
 (function() {
-  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
   const panel = document.getElementById('detailPanel');
-  const HANDLE_H = 44; // px desde el top del panel considerados "handle"
+  const HANDLE_H = 50;
   let startY = 0, dragging = false;
 
   panel.addEventListener('touchstart', e => {
-    if (!isMobile() || !panel.classList.contains('open')) return;
+    if (!IS_MOBILE || !panel.classList.contains('open')) return;
     const touch = e.touches[0];
     const rect = panel.getBoundingClientRect();
-    // Solo activar en la zona del handle visual superior
     if (touch.clientY - rect.top > HANDLE_H) return;
     startY = touch.clientY;
     dragging = true;
     panel.style.transition = 'none';
-    // NO llamamos e.preventDefault() aquí para no bloquear el scroll del panel
   }, { passive: true });
 
   panel.addEventListener('touchmove', e => {
@@ -1380,14 +1494,40 @@ function renderTable(series, media, sort = 'orig') {
     if (!dragging) return;
     dragging = false;
     panel.style.transition = '';
-    const dy = e.changedTouches[0].clientY - startY; // positivo = swipe down
-    if (dy > 80) {
-      cerrarPanel();
-    } else {
-      panel.style.bottom = '0';
-    }
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy > 80) { cerrarPanel(); } else { panel.style.bottom = '0'; }
   }, { passive: true });
 })();
+
+// ════════════════════════════════════════════════════
+// CACHE GLOBAL DE SERIES
+// En la primera carga, después de pintar los markers,
+// descargamos en background los datos de series de
+// TODAS las estaciones y los guardamos en caché.
+// Al tocar un marker la info aparece instantánea.
+// ════════════════════════════════════════════════════
+const seriesCache = {};
+
+function prefetchAllSeries(estaciones) {
+  // Lanzamos las peticiones de todas las estaciones en paralelo,
+  // en lotes de 10 para no saturar el servidor.
+  const BATCH = 10;
+  let i = 0;
+  function nextBatch() {
+    const batch = estaciones.slice(i, i + BATCH);
+    if (!batch.length) return;
+    i += BATCH;
+    Promise.all(
+      batch.map(e =>
+        fetch(`${API_BASE}/estacion/${e.puntoControl}`)
+          .then(r => r.json())
+          .then(data => { seriesCache[e.puntoControl] = data; })
+          .catch(() => {})
+      )
+    ).then(() => setTimeout(nextBatch, 50)); // pequeña pausa entre lotes
+  }
+  nextBatch();
+}
 
 fetch(`${API_BASE}/estaciones`)
   .then(r => r.json())
@@ -1398,6 +1538,8 @@ fetch(`${API_BASE}/estaciones`)
     poblarFiltros(estaciones);
     buildLegend(estaciones);
     mostrarMarkers(estaciones);
+    // Prefetch en background tras un pequeño delay para no competir con el pintado inicial
+    setTimeout(() => prefetchAllSeries(estaciones), 800);
   })
   .catch(() => {
     ['hs-total','hs-visible','lc-vis','lc-tot'].forEach(id => {
