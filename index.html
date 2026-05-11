@@ -1180,7 +1180,11 @@ function abrirPanel(estacion) {
 }
 
 function cerrarPanel() {
-  document.getElementById('detailPanel').classList.remove('open');
+  const panel = document.getElementById('detailPanel');
+  // Limpiar el inline style que pone el swipe handler (tiene más
+  // especificidad que CSS y bloquea la transición de cierre en mobile)
+  panel.style.bottom = '';
+  panel.classList.remove('open');
   document.getElementById('mobPreview').classList.remove('visible');
   if (selectedPC && markers[selectedPC]) {
     const e = estacionesGlobal.find(x => x.puntoControl === selectedPC);
@@ -1585,7 +1589,7 @@ document.getElementById('mobPreviewInner').addEventListener('touchend', e => {
     dragging = false;
     panel.style.transition = '';
     const dy = e.changedTouches[0].clientY - startY;
-    if (dy > 80) { cerrarPanel(); } else { panel.style.bottom = '0'; }
+    if (dy > 80) { cerrarPanel(); } else { panel.style.bottom = ''; }
   }, { passive: true });
 })();
 
