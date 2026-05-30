@@ -11,6 +11,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="data/Provincias_Andalucia.js"></script>
+  <script src="data/Provincias_Hidrosur.js"></script>
 
   <style>
     :root {
@@ -888,18 +889,26 @@ L.control.layers({
   "Google Satélite": googleHybrid
 }, {}, { position: 'bottomright' }).addTo(map);
 
-// Province boundaries — visible on all base layers
-const provinciasLayer = L.geoJSON(provincias, {
-  style: {
-    color: "#0077bb",
-    weight: 2,
-    fillColor: "#0055aa",
-    fillOpacity: 0.05,
-    dashArray: '6 5'
-  },
-  interactive: false   // no intercepta clicks ni hover, los eventos llegan a los markers
-}).addTo(map);
-provinciasLayer.bringToBack();
+// DESPUÉS
+let provinciasLayer = null;
+
+const PROV_STYLE = {
+  color: "#0077bb",
+  weight: 2,
+  fillColor: "#0055aa",
+  fillOpacity: 0.05,
+  dashArray: '6 5'
+};
+
+function actualizarCapaProvincias(procedencia) {
+  if (provinciasLayer) map.removeLayer(provinciasLayer);
+  const geodata = procedencia === 'CHG' ? provincias : provinciasHidrosur;
+  provinciasLayer = L.geoJSON(geodata, { style: PROV_STYLE, interactive: false }).addTo(map);
+  provinciasLayer.bringToBack();
+}
+
+// Carga inicial
+actualizarCapaProvincias('CHG');
 
 // ════════════════════════════════════════════════════
 // STATE
@@ -1606,6 +1615,7 @@ const seriesCache = {};
 // ════════════════════════════════════════════════════
 function cargarEstaciones(procedencia) {
   procedenciaActual = procedencia;
+  actualizarCapaProvincias(procedencia);
 
   // Cerrar panel y preview si están abiertos
   cerrarPanel();
